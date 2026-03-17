@@ -1,10 +1,10 @@
-# fly.toml app configuration file generated for ping-monitor-9b3moq on 2026-03-17T12:45:41Z
+# fly.toml app configuration file generated for ping-monitor-4hx-mw on 2026-03-17T13:40:56Z
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'ping-monitor-9b3moq'
-primary_region = 'nrt'
+app = 'ping-monitor-4hx-mw'
+primary_region = 'ams'
 
 [build]
 
