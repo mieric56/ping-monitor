@@ -1488,8 +1488,11 @@
 
 <script>
 // ─── Config ───────────────────────────────────────────────────
-const API = "__PORT_8000__".startsWith("__") ? "http://localhost:8000" : "__PORT_8000__";
-const WS_URL = API.replace(/^http/, "ws") + "/ws";
+// Use relative URLs so API calls always go to the same host that served this page.
+// Works on localhost, fly.io, iximiuz, reverse proxies, any domain — no hardcoding needed.
+const API = "";
+// Derive WebSocket URL from current page location — works on any host/port/protocol
+const WS_URL = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws";
 
 // ─── State ────────────────────────────────────────────────────
 let pois = {};       // {id: poi}
