@@ -1,0 +1,15 @@
+version: "3.8"
+
+services:
+  ping-monitor:
+    build: .
+    image: ping-monitor:latest
+    container_name: ping-monitor
+    ports:
+      - "8000:8000"
+    environment:
+      # Optional: global Teams webhook for all POIs (can also be set per-POI via UI)
+      - TEAMS_WEBHOOK=${TEAMS_WEBHOOK:-}
+    cap_add:
+      - NET_RAW       # Required for ICMP ping, mtr, traceroute, dublin-traceroute
+    restart: unless-stopped

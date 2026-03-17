@@ -1,0 +1,2421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!--
+   ______                            __
+  / ____/___  ____ ___  ____  __  __/ /____  _____
+ / /   / __ \/ __ `__ \/ __ \/ / / / __/ _ \/ ___/
+/ /___/ /_/ / / / / / / /_/ / /_/ / /_/  __/ /
+\____/\____/_/ /_/ /_/ .___/\__,_/\__/\___/_/
+                    /_/
+        Created with Perplexity Computer
+        https://www.perplexity.ai/computer
+-->
+
+<!-- Perplexity Computer Attribution — SEO Meta Tags -->
+<meta name="generator" content="Perplexity Computer">
+<meta name="author" content="Perplexity Computer">
+<meta property="og:see_also" content="https://www.perplexity.ai/computer">
+<link rel="author" href="https://www.perplexity.ai/computer">
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ping Monitor — POI Status Dashboard</title>
+<meta name="description" content="Real-time ping monitoring dashboard for network Points of Interest. Track latency, packet loss, and uptime with Teams webhook alerts.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@300..700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+
+<style>
+  /* ─── Design Tokens ───────────────────────────────────────── */
+  :root {
+    --font-display: 'JetBrains Mono', monospace;
+    --font-body: 'Inter', 'Helvetica Neue', sans-serif;
+
+    --text-xs:   clamp(0.75rem,  0.7rem  + 0.25vw, 0.875rem);
+    --text-sm:   clamp(0.875rem, 0.8rem  + 0.35vw, 1rem);
+    --text-base: clamp(1rem,     0.95rem + 0.25vw, 1.125rem);
+    --text-lg:   clamp(1.125rem, 1rem    + 0.75vw, 1.5rem);
+    --text-xl:   clamp(1.5rem,   1.2rem  + 1.25vw, 2.25rem);
+
+    --space-1: 0.25rem; --space-2: 0.5rem; --space-3: 0.75rem;
+    --space-4: 1rem; --space-5: 1.25rem; --space-6: 1.5rem;
+    --space-8: 2rem; --space-10: 2.5rem; --space-12: 3rem;
+
+    /* Technical/developer palette — deep navy + cyan accent */
+    --color-bg:              #0d1117;
+    --color-surface:         #161b22;
+    --color-surface-2:       #1c2128;
+    --color-surface-offset:  #21262d;
+    --color-border:          #30363d;
+    --color-divider:         #21262d;
+
+    --color-text:            #e6edf3;
+    --color-text-muted:      #8b949e;
+    --color-text-faint:      #484f58;
+    --color-text-inverse:    #0d1117;
+
+    --color-primary:         #2f81f7;
+    --color-primary-hover:   #388bfd;
+    --color-primary-active:  #58a6ff;
+
+    --color-success:         #3fb950;
+    --color-success-bg:      #0f3c18;
+    --color-warning:         #d29922;
+    --color-warning-bg:      #3d2f0a;
+    --color-error:           #f85149;
+    --color-error-bg:        #3c1111;
+    --color-unknown:         #484f58;
+    --color-unknown-bg:      #21262d;
+
+    --color-cyan:            #39c5cf;
+    --color-orange:          #f0883e;
+
+    --radius-sm: 0.375rem;
+    --radius-md: 0.5rem;
+    --radius-lg: 0.75rem;
+    --radius-xl: 1rem;
+
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
+    --shadow-lg: 0 8px 24px rgba(0,0,0,0.6);
+
+    --transition: 180ms cubic-bezier(0.16, 1, 0.3, 1);
+    --sidebar-w: 260px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    font-family: var(--font-body);
+    font-size: var(--text-sm);
+    color: var(--color-text);
+    background-color: var(--color-bg);
+    line-height: 1.6;
+  }
+
+  img, svg { display: block; }
+  button { cursor: pointer; background: none; border: none; font: inherit; color: inherit; }
+  input, select, textarea { font: inherit; color: inherit; }
+
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border-width: 0;
+  }
+
+  /* ─── Layout ──────────────────────────────────────────────── */
+  .app {
+    display: grid;
+    grid-template-columns: var(--sidebar-w) 1fr;
+    grid-template-rows: 1fr;
+    height: 100dvh;
+  }
+
+  /* ─── Sidebar ─────────────────────────────────────────────── */
+  .sidebar {
+    background: var(--color-surface);
+    border-right: 1px solid var(--color-border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    grid-row: 1;
+  }
+
+  .sidebar-header {
+    padding: var(--space-5) var(--space-5) var(--space-4);
+    border-bottom: 1px solid var(--color-border);
+    flex-shrink: 0;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+  }
+
+  .logo-mark {
+    width: 32px; height: 32px;
+    flex-shrink: 0;
+  }
+
+  .logo-text {
+    font-family: var(--font-display);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    color: var(--color-text);
+    line-height: 1.2;
+  }
+
+  .logo-sub {
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    font-weight: 400;
+  }
+
+  .summary-pills {
+    display: flex;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
+
+  .pill {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 2px var(--space-2);
+    border-radius: var(--radius-full, 9999px);
+    font-size: var(--text-xs);
+    font-weight: 500;
+    font-family: var(--font-display);
+  }
+
+  .pill-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+  }
+
+  .pill-up { background: var(--color-success-bg); color: var(--color-success); }
+  .pill-up .pill-dot { background: var(--color-success); }
+  .pill-down { background: var(--color-error-bg); color: var(--color-error); }
+  .pill-down .pill-dot { background: var(--color-error); }
+  .pill-unknown { background: var(--color-unknown-bg); color: var(--color-text-muted); }
+  .pill-unknown .pill-dot { background: var(--color-unknown); }
+
+  .sidebar-list {
+    flex: 1;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: var(--space-3) 0;
+  }
+
+  .sidebar-list::-webkit-scrollbar { width: 4px; }
+  .sidebar-list::-webkit-scrollbar-track { background: transparent; }
+  .sidebar-list::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 2px; }
+
+  .poi-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-4);
+    cursor: pointer;
+    border-radius: 0;
+    transition: background var(--transition);
+    border-left: 2px solid transparent;
+  }
+
+  .poi-item:hover { background: var(--color-surface-offset); }
+  .poi-item.active {
+    background: var(--color-surface-offset);
+    border-left-color: var(--color-primary);
+  }
+
+  .poi-status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    transition: background var(--transition);
+  }
+  .poi-status-dot.up { background: var(--color-success); box-shadow: 0 0 6px var(--color-success); }
+  .poi-status-dot.down { background: var(--color-error); box-shadow: 0 0 6px var(--color-error); animation: pulse-red 1.2s ease infinite; }
+  .poi-status-dot.unknown { background: var(--color-unknown); }
+
+  @keyframes pulse-red {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .poi-item-info { flex: 1; min-width: 0; }
+  .poi-item-name {
+    font-size: var(--text-sm);
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .poi-item-host {
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    font-family: var(--font-display);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .poi-item-latency {
+    font-family: var(--font-display);
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    flex-shrink: 0;
+  }
+
+  .sidebar-footer {
+    padding: var(--space-4);
+    border-top: 1px solid var(--color-border);
+    flex-shrink: 0;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    transition: background var(--transition), color var(--transition), border-color var(--transition);
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+
+  .btn-primary {
+    background: var(--color-primary);
+    color: var(--color-text-inverse);
+    border-color: var(--color-primary);
+  }
+  .btn-primary:hover { background: var(--color-primary-hover); border-color: var(--color-primary-hover); }
+
+  .btn-secondary {
+    background: transparent;
+    color: var(--color-text-muted);
+    border-color: var(--color-border);
+  }
+  .btn-secondary:hover { background: var(--color-surface-offset); color: var(--color-text); }
+
+  .btn-danger {
+    background: transparent;
+    color: var(--color-error);
+    border-color: var(--color-error);
+  }
+  .btn-danger:hover { background: var(--color-error-bg); }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--color-text-muted);
+    border-color: transparent;
+    padding: var(--space-1) var(--space-2);
+  }
+  .btn-ghost:hover { background: var(--color-surface-offset); color: var(--color-text); }
+
+  .btn-sm { padding: var(--space-1) var(--space-3); font-size: var(--text-xs); }
+  .btn-full { width: 100%; }
+
+  /* ─── Main area ───────────────────────────────────────────── */
+  .main {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--color-bg);
+  }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-4) var(--space-6);
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-surface);
+    flex-shrink: 0;
+    gap: var(--space-4);
+  }
+
+  .topbar-left {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+
+  .topbar-title {
+    font-size: var(--text-lg);
+    font-weight: 600;
+    font-family: var(--font-display);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .topbar-host {
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    font-family: var(--font-display);
+  }
+
+  .topbar-right {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-shrink: 0;
+  }
+
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-3);
+    border-radius: var(--radius-full, 9999px);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    font-family: var(--font-display);
+  }
+
+  .status-badge.up { background: var(--color-success-bg); color: var(--color-success); border: 1px solid rgba(63,185,80,0.3); }
+  .status-badge.down { background: var(--color-error-bg); color: var(--color-error); border: 1px solid rgba(248,81,73,0.3); }
+  .status-badge.unknown { background: var(--color-unknown-bg); color: var(--color-text-muted); border: 1px solid var(--color-border); }
+
+  /* ─── Content scroll area ─────────────────────────────────── */
+  .content {
+    flex: 1;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: var(--space-6);
+  }
+
+  .content::-webkit-scrollbar { width: 6px; }
+  .content::-webkit-scrollbar-track { background: transparent; }
+  .content::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
+
+  /* ─── KPI cards ───────────────────────────────────────────── */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: var(--space-4);
+    margin-bottom: var(--space-6);
+  }
+
+  .kpi-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-5);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .kpi-label {
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+    margin-bottom: var(--space-2);
+  }
+
+  .kpi-value {
+    font-family: var(--font-display);
+    font-size: var(--text-xl);
+    font-weight: 600;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums lining-nums;
+    transition: color var(--transition);
+  }
+
+  .kpi-sub {
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    margin-top: var(--space-1);
+  }
+
+  /* ─── Charts ──────────────────────────────────────────────── */
+  .charts-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-4);
+    margin-bottom: var(--space-6);
+  }
+
+  .chart-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-5);
+  }
+
+  .chart-title {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    margin-bottom: var(--space-4);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .chart-title-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+  }
+
+  .chart-wrap { position: relative; height: 160px; }
+
+  /* ─── History table ───────────────────────────────────────── */
+  .section-title {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    margin-bottom: var(--space-3);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .table-wrap {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+
+  table { width: 100%; border-collapse: collapse; }
+
+  thead tr {
+    background: var(--color-surface-offset);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+
+  th {
+    padding: var(--space-3) var(--space-4);
+    text-align: left;
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  td {
+    padding: var(--space-3) var(--space-4);
+    font-size: var(--text-sm);
+    border-bottom: 1px solid var(--color-divider);
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: var(--color-surface-offset); }
+
+  .td-mono { font-family: var(--font-display); font-size: var(--text-xs); }
+  .td-status-up { color: var(--color-success); font-weight: 600; font-family: var(--font-display); font-size: var(--text-xs); }
+  .td-status-down { color: var(--color-error); font-weight: 600; font-family: var(--font-display); font-size: var(--text-xs); }
+  .td-status-unknown { color: var(--color-text-muted); font-family: var(--font-display); font-size: var(--text-xs); }
+
+  /* ─── Empty / welcome state ───────────────────────────────── */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: var(--space-12) var(--space-8);
+    gap: var(--space-4);
+    color: var(--color-text-muted);
+    min-height: 300px;
+  }
+
+  .empty-icon {
+    width: 48px; height: 48px;
+    opacity: 0.3;
+  }
+
+  .empty-title {
+    font-size: var(--text-lg);
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .empty-desc { font-size: var(--text-sm); max-width: 360px; line-height: 1.6; }
+
+  /* ─── Modals ──────────────────────────────────────────────── */
+  .overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(4px);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-6);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--transition);
+  }
+
+  .overlay.open { opacity: 1; pointer-events: all; }
+
+  .modal {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-xl);
+    padding: var(--space-6);
+    width: 100%;
+    max-width: 440px;
+    box-shadow: var(--shadow-lg);
+    transform: translateY(8px);
+    transition: transform var(--transition);
+  }
+
+  .overlay.open .modal { transform: translateY(0); }
+
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--space-5);
+  }
+
+  .modal-title {
+    font-size: var(--text-base);
+    font-weight: 700;
+    font-family: var(--font-display);
+  }
+
+  .form-group {
+    margin-bottom: var(--space-4);
+  }
+
+  .form-label {
+    display: block;
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    margin-bottom: var(--space-2);
+  }
+
+  .form-hint {
+    font-size: var(--text-xs);
+    color: var(--color-text-faint);
+    margin-top: var(--space-1);
+  }
+
+  .form-input {
+    width: 100%;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-sm);
+    color: var(--color-text);
+    transition: border-color var(--transition), box-shadow var(--transition);
+  }
+
+  .form-input:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(47,129,247,0.15);
+  }
+
+  .form-input::placeholder { color: var(--color-text-faint); }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-3);
+  }
+
+  .modal-actions {
+    display: flex;
+    gap: var(--space-3);
+    margin-top: var(--space-5);
+    justify-content: flex-end;
+  }
+
+  /* ─── Settings panel ──────────────────────────────────────── */
+  .settings-modal { max-width: 480px; }
+
+  /* ─── WS indicator ────────────────────────────────────────── */
+  .ws-indicator {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    font-family: var(--font-display);
+  }
+
+  .ws-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--color-unknown);
+    transition: background var(--transition);
+  }
+  .ws-dot.connected { background: var(--color-success); box-shadow: 0 0 5px var(--color-success); }
+  .ws-dot.disconnected { background: var(--color-error); }
+
+  /* ─── Toast notifications ─────────────────────────────────── */
+  .toast-container {
+    position: fixed;
+    bottom: var(--space-6);
+    right: var(--space-6);
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    pointer-events: none;
+  }
+
+  .toast {
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-3) var(--space-4);
+    font-size: var(--text-sm);
+    box-shadow: var(--shadow-md);
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 260px;
+    animation: toast-in 0.2s ease forwards;
+    pointer-events: all;
+    border-left: 3px solid var(--color-primary);
+  }
+
+  .toast.success { border-left-color: var(--color-success); }
+  .toast.error { border-left-color: var(--color-error); }
+
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateX(16px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  /* ─── Sparkline mini chart ────────────────────────────────── */
+  .spark-bar-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 24px;
+  }
+
+  .spark-bar {
+    flex: 1;
+    border-radius: 2px 2px 0 0;
+    min-height: 2px;
+    transition: height 0.3s ease;
+  }
+
+  /* ─── No POI selected ─────────────────────────────────────── */
+  #welcome-screen {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: var(--space-5);
+    padding: var(--space-8);
+    color: var(--color-text-muted);
+  }
+
+  #welcome-screen h2 {
+    font-size: var(--text-lg);
+    font-weight: 600;
+    color: var(--color-text);
+    font-family: var(--font-display);
+  }
+
+  /* ─── Responsive ──────────────────────────────────────────── */
+  @media (max-width: 768px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+    .sidebar { grid-row: 1; max-height: 200px; border-right: none; border-bottom: 1px solid var(--color-border); }
+    .charts-grid { grid-template-columns: 1fr; }
+  }
+
+  /* ─── Uptime bar ──────────────────────────────────────────── */
+  .uptime-bar {
+    display: flex;
+    gap: 2px;
+    height: 20px;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    margin-top: var(--space-2);
+  }
+
+  .uptime-seg {
+    flex: 1;
+    border-radius: 1px;
+  }
+
+  /* ─── Tabs ───────────────────────────────────────────────── */
+  .tab-bar {
+    display: flex;
+    gap: 2px;
+    border-bottom: 1px solid var(--color-border);
+    margin-bottom: var(--space-5);
+    background: transparent;
+  }
+
+  .tab-btn {
+    padding: var(--space-2) var(--space-4);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    color: var(--color-text-muted);
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    transition: color var(--transition), border-color var(--transition);
+    margin-bottom: -1px;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .tab-btn:hover { color: var(--color-text); }
+
+  .tab-btn.active {
+    color: var(--color-primary);
+    border-bottom-color: var(--color-primary);
+  }
+
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* ─── Diagnostics panel ────────────────────────────────────── */
+  .diag-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    margin-bottom: var(--space-4);
+    flex-wrap: wrap;
+  }
+
+  .diag-toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  .diag-select {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    font-family: var(--font-display);
+    cursor: pointer;
+  }
+
+  .diag-select:focus { outline: none; border-color: var(--color-primary); }
+
+  .running-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 2px var(--space-2);
+    background: var(--color-warning-bg, rgba(210,153,34,0.15));
+    color: var(--color-warning);
+    border-radius: var(--radius-full, 9999px);
+    font-size: var(--text-xs);
+    font-family: var(--font-display);
+    animation: pulse-warn 1.2s ease infinite;
+  }
+
+  @keyframes pulse-warn {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  /* ─── Diag run card ─────────────────────────────────────────── */
+  .diag-run-list { display: flex; flex-direction: column; gap: var(--space-3); }
+
+  .diag-run-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+
+  .diag-run-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-3) var(--space-4);
+    cursor: pointer;
+    user-select: none;
+    transition: background var(--transition);
+  }
+
+  .diag-run-header:hover { background: var(--color-surface-offset); }
+
+  .diag-run-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  .diag-ts {
+    font-family: var(--font-display);
+    font-size: var(--text-sm);
+    color: var(--color-text);
+    font-weight: 600;
+  }
+
+  .diag-info {
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    font-family: var(--font-display);
+  }
+
+  .diag-run-body { display: none; }
+  .diag-run-body.open { display: block; }
+
+  .diag-hop-table-wrap {
+    overflow-x: auto;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .diag-hop-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-xs);
+    font-family: var(--font-display);
+  }
+
+  .diag-hop-table th {
+    padding: var(--space-2) var(--space-3);
+    text-align: left;
+    background: var(--color-surface-offset);
+    color: var(--color-text-muted);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .diag-hop-table td {
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--color-divider);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums lining-nums;
+    color: var(--color-text);
+  }
+
+  .diag-hop-table tbody tr:last-child td { border-bottom: none; }
+  .diag-hop-table tbody tr:hover td { background: var(--color-surface-offset); }
+
+  .hop-loss-high { color: var(--color-error); }
+  .hop-loss-med  { color: var(--color-warning); }
+  .hop-loss-ok   { color: var(--color-success); }
+  .hop-timeout   { color: var(--color-text-faint); font-style: italic; }
+
+  .raw-output {
+    font-family: var(--font-display);
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    background: var(--color-bg);
+    border-top: 1px solid var(--color-border);
+    padding: var(--space-4);
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 300px;
+    overflow-y: auto;
+    line-height: 1.6;
+  }
+
+  .raw-toggle {
+    padding: var(--space-2) var(--space-4);
+    border-top: 1px solid var(--color-border);
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    transition: background var(--transition);
+  }
+
+  .raw-toggle:hover { background: var(--color-surface-offset); color: var(--color-text); }
+
+  .chevron { transition: transform 0.2s; }
+  .chevron.open { transform: rotate(180deg); }
+
+  /* ─── Dublin Traceroute ──────────────────────────────── */
+  .dublin-matrix-wrap {
+    overflow-x: auto;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border);
+    margin-bottom: var(--space-3);
+  }
+  .dublin-matrix {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: var(--text-xs);
+    font-family: var(--font-display);
+  }
+  .dublin-matrix th {
+    background: var(--color-surface-offset);
+    padding: var(--space-2) var(--space-3);
+    text-align: left;
+    font-weight: 600;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .dublin-matrix th.flow-col {
+    color: var(--color-text-muted);
+    font-size: 9px;
+    max-width: 90px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .dublin-matrix td {
+    padding: var(--space-1) var(--space-3);
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    vertical-align: middle;
+    white-space: nowrap;
+  }
+  .dublin-matrix tr:last-child td { border-bottom: none; }
+  .dublin-matrix .ttl-cell {
+    color: var(--color-text-muted);
+    font-weight: 600;
+    min-width: 28px;
+  }
+  .dublin-matrix .hop-cell {
+    min-width: 110px;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .hop-cell.timeout-hop { color: var(--color-text-muted); }
+  .hop-cell.diverge-hop {
+    background: rgba(255, 170, 0, 0.08);
+    border-left: 2px solid #ffaa00;
+    color: #ffcc55;
+    font-weight: 600;
+  }
+  .hop-cell.nat-hop {
+    background: rgba(130, 80, 255, 0.10);
+    border-left: 2px solid #8855ff;
+    color: #bb99ff;
+  }
+  .hop-cell.last-hop {
+    color: var(--color-success);
+    font-weight: 600;
+  }
+  .hop-rtt {
+    display: block;
+    font-size: 10px;
+    color: var(--color-text-muted);
+    margin-top: 1px;
+  }
+  .rtt-fast { color: #4ade80; }
+  .rtt-med  { color: #facc15; }
+  .rtt-slow { color: #f87171; }
+  .diverge-row td { border-top: 1px dashed rgba(255,170,0,0.3); }
+  .dublin-legend {
+    display: flex;
+    gap: var(--space-4);
+    flex-wrap: wrap;
+    font-size: var(--text-xs);
+    color: var(--color-text-muted);
+    padding: var(--space-2) 0 var(--space-3);
+    align-items: center;
+  }
+  .legend-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 2px;
+    margin-right: 4px;
+  }
+  .dublin-summary {
+    display: flex;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+    margin-bottom: var(--space-3);
+  }
+  .dublin-stat {
+    background: var(--color-surface-offset);
+    border-radius: var(--radius-md);
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-xs);
+    font-family: var(--font-display);
+  }
+  .dublin-stat strong {
+    color: var(--color-primary);
+    font-size: var(--text-sm);
+    display: block;
+  }
+  .diverge-badge {
+    display: inline-block;
+    background: rgba(255,170,0,0.15);
+    color: #ffcc55;
+    border: 1px solid rgba(255,170,0,0.3);
+    border-radius: var(--radius-sm);
+    padding: 1px 6px;
+    font-size: 10px;
+    font-family: var(--font-display);
+    font-weight: 600;
+    margin-left: var(--space-2);
+  }
+
+  /* ─── Loading skeleton ────────────────────────────────────── */
+  .skeleton {
+    background: linear-gradient(90deg, var(--color-surface-offset) 25%, var(--color-surface-2) 50%, var(--color-surface-offset) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: var(--radius-sm);
+  }
+
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ─── Sidebar ────────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo">
+        <!-- SVG Logo: Radar/ping mark -->
+        <svg class="logo-mark" viewBox="0 0 32 32" fill="none" aria-label="Ping Monitor Logo">
+          <circle cx="16" cy="16" r="15" stroke="#2f81f7" stroke-width="1.5" opacity="0.25"/>
+          <circle cx="16" cy="16" r="10" stroke="#2f81f7" stroke-width="1.5" opacity="0.4"/>
+          <circle cx="16" cy="16" r="5" stroke="#2f81f7" stroke-width="1.5" opacity="0.6"/>
+          <circle cx="16" cy="16" r="2" fill="#2f81f7"/>
+          <!-- Sweep arc -->
+          <path d="M16 16 L28 10" stroke="#2f81f7" stroke-width="1.5" stroke-linecap="round" opacity="0.8"/>
+          <circle cx="28" cy="10" r="1.5" fill="#39c5cf"/>
+        </svg>
+        <div>
+          <div class="logo-text">PING MONITOR</div>
+          <div class="logo-sub">POI Status Dashboard</div>
+        </div>
+      </div>
+      <div class="summary-pills" id="summary-pills">
+        <span class="pill pill-unknown"><span class="pill-dot"></span>— UP</span>
+        <span class="pill pill-unknown"><span class="pill-dot"></span>— DOWN</span>
+      </div>
+    </div>
+
+    <div class="sidebar-list" id="poi-list" role="list">
+      <div class="empty-state" style="min-height:auto; padding: var(--space-8) var(--space-4);">
+        <svg class="empty-icon" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="24" cy="24" r="22"/><circle cx="24" cy="24" r="12"/><circle cx="24" cy="24" r="4" fill="currentColor" stroke="none"/></svg>
+        <span style="font-size:var(--text-xs); color:var(--color-text-muted)">No POIs added yet</span>
+      </div>
+    </div>
+
+    <div class="sidebar-footer">
+      <div style="display:flex; gap:var(--space-2); margin-bottom:var(--space-3);">
+        <button class="btn btn-primary btn-full" data-testid="btn-add-poi" onclick="openAddModal()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+          Add POI
+        </button>
+        <button class="btn btn-secondary btn-sm" data-testid="btn-settings" onclick="openSettingsModal()" title="Global settings">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+      </div>
+      <div class="ws-indicator">
+        <span class="ws-dot" id="ws-dot"></span>
+        <span id="ws-status">Connecting...</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ─── Main ──────────────────────────────────────────────── -->
+  <main class="main">
+    <div class="topbar" id="topbar">
+      <div class="topbar-left">
+        <span class="topbar-title" id="topbar-title">Select a POI</span>
+        <span class="topbar-host" id="topbar-host"></span>
+      </div>
+      <div class="topbar-right" id="topbar-actions" style="display:none">
+        <span class="status-badge unknown" id="status-badge">UNKNOWN</span>
+        <button class="btn btn-secondary btn-sm" data-testid="btn-ping-now" id="btn-ping-now" onclick="pingNow()">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 12a11 11 0 0 1-11 11M1 12a11 11 0 0 1 11-11"/><polyline points="1 1 1 12 12 12"/></svg>
+          Ping Now
+        </button>
+        <button class="btn btn-secondary btn-sm" data-testid="btn-edit-poi" onclick="openEditModal()">Edit</button>
+        <button class="btn btn-danger btn-sm" data-testid="btn-delete-poi" onclick="confirmDelete()">Delete</button>
+      </div>
+    </div>
+
+    <div class="content" id="content">
+      <div id="welcome-screen">
+        <svg viewBox="0 0 64 64" width="64" height="64" fill="none" stroke="#2f81f7" stroke-width="1.5" opacity="0.5">
+          <circle cx="32" cy="32" r="30"/>
+          <circle cx="32" cy="32" r="20"/>
+          <circle cx="32" cy="32" r="10"/>
+          <circle cx="32" cy="32" r="3" fill="#2f81f7" stroke="none"/>
+          <line x1="32" y1="32" x2="54" y2="18" stroke="#39c5cf" stroke-width="1.5"/>
+          <circle cx="54" cy="18" r="2.5" fill="#39c5cf" stroke="none"/>
+        </svg>
+        <h2>No POI Selected</h2>
+        <p>Add a Point of Interest using the button in the sidebar, then select it to view live ping data.</p>
+        <button class="btn btn-primary" onclick="openAddModal()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+          Add First POI
+        </button>
+      </div>
+
+      <div id="detail-view" style="display:none">
+        <!-- Tab bar -->
+        <div class="tab-bar" role="tablist">
+          <button class="tab-btn active" role="tab" data-tab="ping" onclick="switchTab('ping')" data-testid="tab-ping">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Ping
+          </button>
+          <button class="tab-btn" role="tab" data-tab="traceroute" onclick="switchTab('traceroute')" data-testid="tab-traceroute">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            Traceroute
+          </button>
+          <button class="tab-btn" role="tab" data-tab="dublin" onclick="switchTab('dublin')" data-testid="tab-dublin">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
+            Dublin
+          </button>
+          <button class="tab-btn" role="tab" data-tab="mtr" onclick="switchTab('mtr')" data-testid="tab-mtr">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v18H3z"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+            MTR
+          </button>
+        </div>
+
+        <!-- ── TAB: Ping ─────────────────────────────────────── -->
+        <div class="tab-panel active" id="tab-panel-ping">
+
+        <!-- KPI Cards -->
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-label">Latency (RTT)</div>
+            <div class="kpi-value" id="kpi-latency">—</div>
+            <div class="kpi-sub" id="kpi-latency-sub">Round-trip time</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Packet Loss</div>
+            <div class="kpi-value" id="kpi-loss">—</div>
+            <div class="kpi-sub">Dropped packets %</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Uptime (session)</div>
+            <div class="kpi-value" id="kpi-uptime">—</div>
+            <div class="kpi-sub" id="kpi-uptime-sub">Based on recent probes</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Last Checked</div>
+            <div class="kpi-value" id="kpi-last-checked" style="font-size:var(--text-base)">—</div>
+            <div class="kpi-sub" id="kpi-interval-sub">Interval: —s</div>
+          </div>
+        </div>
+
+        <!-- Charts -->
+        <div class="charts-grid">
+          <div class="chart-card">
+            <div class="chart-title">
+              <span class="chart-title-dot" style="background:var(--color-primary)"></span>
+              Latency (ms)
+            </div>
+            <div class="chart-wrap">
+              <canvas id="chart-latency"></canvas>
+            </div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">
+              <span class="chart-title-dot" style="background:var(--color-error)"></span>
+              Packet Loss (%)
+            </div>
+            <div class="chart-wrap">
+              <canvas id="chart-loss"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- History table -->
+        <div class="section-title">
+          <span>Probe History</span>
+          <span id="history-count" style="font-weight:400; text-transform:none; letter-spacing:0"></span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Status</th>
+                <th>Latency (ms)</th>
+                <th>Packet Loss</th>
+              </tr>
+            </thead>
+            <tbody id="history-tbody">
+              <tr><td colspan="4" style="text-align:center; color:var(--color-text-muted); padding:var(--space-8);">No probes yet</td></tr>
+            </tbody>
+          </table>
+        </div>
+        </div><!-- /tab-panel-ping -->
+
+        <!-- ── TAB: Traceroute ────────────────────────────── -->
+        <div class="tab-panel" id="tab-panel-traceroute">
+          <div class="diag-toolbar">
+            <div class="diag-toolbar-left">
+              <span style="font-size:var(--text-sm); font-weight:600;">Traceroute Runs</span>
+              <span id="tr-running-badge" style="display:none" class="running-badge">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4"/></svg>
+                Running...
+              </span>
+              <span id="tr-count-badge" class="diag-info"></span>
+            </div>
+            <div style="display:flex; gap:var(--space-2); align-items:center;">
+              <label class="diag-info" for="tr-max-hops">Max hops:</label>
+              <select id="tr-max-hops" class="diag-select" data-testid="select-tr-maxhops">
+                <option value="15">15</option>
+                <option value="20">20</option>
+                <option value="30" selected>30</option>
+              </select>
+              <button class="btn btn-primary btn-sm" id="btn-run-traceroute" onclick="runTraceroute()" data-testid="btn-run-traceroute">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                Run Now
+              </button>
+            </div>
+          </div>
+          <div class="diag-run-list" id="traceroute-run-list">
+            <div style="text-align:center; padding:var(--space-8); color:var(--color-text-muted); font-size:var(--text-sm);">No traceroute runs yet — click <strong>Run Now</strong> to start.</div>
+          </div>
+        </div><!-- /tab-panel-traceroute -->
+
+        <!-- ── TAB: MTR ──────────────────────────────────── -->
+        <div class="tab-panel" id="tab-panel-mtr">
+          <div class="diag-toolbar">
+            <div class="diag-toolbar-left">
+              <span style="font-size:var(--text-sm); font-weight:600;">MTR Report Runs</span>
+              <span id="mtr-running-badge" style="display:none" class="running-badge">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4"/></svg>
+                Running...
+              </span>
+              <span id="mtr-count-badge" class="diag-info"></span>
+            </div>
+            <div style="display:flex; gap:var(--space-2); align-items:center;">
+              <label class="diag-info" for="mtr-cycles">Cycles:</label>
+              <select id="mtr-cycles" class="diag-select" data-testid="select-mtr-cycles">
+                <option value="5">5</option>
+                <option value="10" selected>10</option>
+                <option value="20">20</option>
+                <option value="50">50</option>
+              </select>
+              <button class="btn btn-primary btn-sm" id="btn-run-mtr" onclick="runMTR()" data-testid="btn-run-mtr">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 3h18v18H3z"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+                Run Now
+              </button>
+            </div>
+          </div>
+          <div class="diag-run-list" id="mtr-run-list">
+            <div style="text-align:center; padding:var(--space-8); color:var(--color-text-muted); font-size:var(--text-sm);">No MTR runs yet — click <strong>Run Now</strong> to start.</div>
+          </div>
+        </div><!-- /tab-panel-mtr -->
+
+        <!-- ── TAB: Dublin Traceroute ──────────────────── -->
+        <div class="tab-panel" id="tab-panel-dublin">
+          <div class="diag-toolbar">
+            <div class="diag-toolbar-left">
+              <span style="font-size:var(--text-sm); font-weight:600;">Dublin Traceroute</span>
+              <span id="dublin-running-badge" style="display:none" class="running-badge">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4"/></svg>
+                Probing paths...
+              </span>
+              <span id="dublin-count-badge" class="diag-info"></span>
+            </div>
+            <div style="display:flex; gap:var(--space-2); align-items:center; flex-wrap:wrap;">
+              <label class="diag-info" for="dublin-npaths">Paths:</label>
+              <select id="dublin-npaths" class="diag-select" data-testid="select-dublin-npaths">
+                <option value="4">4</option>
+                <option value="10" selected>10</option>
+                <option value="20">20</option>
+              </select>
+              <label class="diag-info" for="dublin-maxttl">Max TTL:</label>
+              <select id="dublin-maxttl" class="diag-select" data-testid="select-dublin-maxttl">
+                <option value="15">15</option>
+                <option value="20">20</option>
+                <option value="30" selected>30</option>
+              </select>
+              <button class="btn btn-primary btn-sm" id="btn-run-dublin" onclick="runDublin()" data-testid="btn-run-dublin">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
+                Run Now
+              </button>
+            </div>
+          </div>
+          <div class="diag-run-list" id="dublin-run-list">
+            <div style="text-align:center; padding:var(--space-8); color:var(--color-text-muted); font-size:var(--text-sm);">No Dublin Traceroute runs yet — click <strong>Run Now</strong> to discover all ECMP paths.</div>
+          </div>
+        </div><!-- /tab-panel-dublin -->
+
+      </div><!-- /detail-view -->
+    </div>
+  </main>
+</div>
+
+<!-- ─── Add POI Modal ────────────────────────────────────────── -->
+<div class="overlay" id="modal-add" role="dialog" aria-modal="true" aria-labelledby="modal-add-title">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-add-title">Add POI</div>
+      <button class="btn btn-ghost" onclick="closeModal('modal-add')" aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <form id="form-add" onsubmit="submitAddPOI(event)">
+      <div class="form-group">
+        <label class="form-label" for="add-name">Name</label>
+        <input class="form-input" id="add-name" type="text" placeholder="e.g. Gateway Router" required data-testid="input-poi-name">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="add-host">Host / IP Address</label>
+        <input class="form-input" id="add-host" type="text" placeholder="e.g. 8.8.8.8 or google.com" required data-testid="input-poi-host">
+        <div class="form-hint">Hostname or IP that will be pinged</div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="add-interval">Interval (s)</label>
+          <input class="form-input" id="add-interval" type="number" min="5" max="300" value="30" data-testid="input-poi-interval">
+          <div class="form-hint">Min 5s</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="add-count">Ping Count</label>
+          <input class="form-input" id="add-count" type="number" min="1" max="10" value="4" data-testid="input-poi-count">
+          <div class="form-hint">Per probe (1–10)</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="add-webhook">Teams Webhook URL <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:var(--text-xs)">(optional override)</span></label>
+        <input class="form-input" id="add-webhook" type="url" placeholder="https://outlook.office.com/webhook/..." data-testid="input-poi-webhook">
+        <div class="form-hint">Overrides global Teams webhook for this POI</div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('modal-add')">Cancel</button>
+        <button type="submit" class="btn btn-primary" data-testid="btn-submit-add">Add POI</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ─── Edit POI Modal ───────────────────────────────────────── -->
+<div class="overlay" id="modal-edit" role="dialog" aria-modal="true" aria-labelledby="modal-edit-title">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-edit-title">Edit POI</div>
+      <button class="btn btn-ghost" onclick="closeModal('modal-edit')" aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <form id="form-edit" onsubmit="submitEditPOI(event)">
+      <div class="form-group">
+        <label class="form-label" for="edit-name">Name</label>
+        <input class="form-input" id="edit-name" type="text" required data-testid="input-edit-name">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="edit-host">Host / IP Address</label>
+        <input class="form-input" id="edit-host" type="text" required data-testid="input-edit-host">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="edit-interval">Interval (s)</label>
+          <input class="form-input" id="edit-interval" type="number" min="5" max="300" data-testid="input-edit-interval">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="edit-count">Ping Count</label>
+          <input class="form-input" id="edit-count" type="number" min="1" max="10" data-testid="input-edit-count">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="edit-webhook">Teams Webhook URL</label>
+        <input class="form-input" id="edit-webhook" type="url" placeholder="https://outlook.office.com/webhook/..." data-testid="input-edit-webhook">
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('modal-edit')">Cancel</button>
+        <button type="submit" class="btn btn-primary" data-testid="btn-submit-edit">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ─── Settings Modal ───────────────────────────────────────── -->
+<div class="overlay" id="modal-settings" role="dialog" aria-modal="true" aria-labelledby="modal-settings-title">
+  <div class="modal settings-modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-settings-title">Global Settings</div>
+      <button class="btn btn-ghost" onclick="closeModal('modal-settings')" aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <form id="form-settings" onsubmit="submitSettings(event)">
+      <div class="form-group">
+        <label class="form-label" for="settings-webhook">Microsoft Teams Webhook URL</label>
+        <input class="form-input" id="settings-webhook" type="url" placeholder="https://outlook.office.com/webhook/..." data-testid="input-settings-webhook">
+        <div class="form-hint">Global fallback. Each POI can override this with its own webhook.</div>
+      </div>
+      <div style="padding: var(--space-3); background: var(--color-surface-offset); border-radius: var(--radius-md); border: 1px solid var(--color-border); margin-bottom: var(--space-4);">
+        <div style="font-size:var(--text-xs); color:var(--color-text-muted); margin-bottom:var(--space-2); font-weight:600; text-transform:uppercase; letter-spacing:0.07em;">How to get a Teams Webhook</div>
+        <ol style="font-size:var(--text-xs); color:var(--color-text-muted); line-height:1.8; padding-left:var(--space-4);">
+          <li>In Teams, open a channel → Connectors</li>
+          <li>Search "Incoming Webhook" → Configure</li>
+          <li>Give it a name and copy the URL</li>
+        </ol>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('modal-settings')">Cancel</button>
+        <button type="submit" class="btn btn-primary" data-testid="btn-save-settings">Save Settings</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ─── Toast container ──────────────────────────────────────── -->
+<div class="toast-container" id="toasts"></div>
+
+<script>
+// ─── Config ───────────────────────────────────────────────────
+const API = "__PORT_8000__".startsWith("__") ? "http://localhost:8000" : "__PORT_8000__";
+const WS_URL = API.replace(/^http/, "ws") + "/ws";
+
+// ─── State ────────────────────────────────────────────────────
+let pois = {};       // {id: poi}
+let liveData = {};   // {id: live}
+let historyData = {}; // {id: [...]}
+let selectedId = null;
+let ws = null;
+let chartLatency = null;
+let chartLoss = null;
+
+// ─── WebSocket ────────────────────────────────────────────────
+function connectWS() {
+  const dot = document.getElementById("ws-dot");
+  const label = document.getElementById("ws-status");
+  dot.className = "ws-dot";
+  label.textContent = "Connecting...";
+
+  ws = new WebSocket(WS_URL);
+
+  ws.onopen = () => {
+    dot.className = "ws-dot connected";
+    label.textContent = "Live";
+  };
+
+  ws.onclose = () => {
+    dot.className = "ws-dot disconnected";
+    label.textContent = "Reconnecting...";
+    setTimeout(connectWS, 3000);
+  };
+
+  ws.onerror = () => {
+    dot.className = "ws-dot disconnected";
+  };
+
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+
+    if (msg.type === "init") {
+      pois = {};
+      liveData = {};
+      historyData = {};
+      tracerouteData = {};
+      mtrData = {};
+      dublinData = {};
+      for (const [id, entry] of Object.entries(msg.pois)) {
+        pois[id] = entry.poi;
+        liveData[id] = entry.live;
+        historyData[id] = entry.history || [];
+        tracerouteData[id] = entry.traceroute_history || [];
+        mtrData[id] = entry.mtr_history || [];
+        dublinData[id] = entry.dublin_history || [];
+      }
+      renderSidebar();
+      if (selectedId && pois[selectedId]) renderDetail();
+
+    } else if (msg.type === "update") {
+      const { poi_id, data } = msg;
+      if (!historyData[poi_id]) historyData[poi_id] = [];
+      historyData[poi_id].push(data);
+      if (historyData[poi_id].length > 120) historyData[poi_id].shift();
+      liveData[poi_id] = { ...data, last_checked: data.ts };
+      updateSidebarItem(poi_id);
+      if (selectedId === poi_id) {
+        updateKPIs();
+        updateCharts();
+        updateHistoryTable();
+      }
+
+    } else if (msg.type === "diag_start") {
+      const { tool, poi_id } = msg;
+      if (selectedId === poi_id) {
+        if (tool === "traceroute") {
+          const badge = document.getElementById("tr-running-badge");
+          const btn   = document.getElementById("btn-run-traceroute");
+          if (badge) badge.style.display = "inline-flex";
+          if (btn)   btn.disabled = true;
+        } else if (tool === "mtr") {
+          const badge = document.getElementById("mtr-running-badge");
+          const btn   = document.getElementById("btn-run-mtr");
+          if (badge) badge.style.display = "inline-flex";
+          if (btn)   btn.disabled = true;
+        } else if (tool === "dublin") {
+          const badge = document.getElementById("dublin-running-badge");
+          const btn   = document.getElementById("btn-run-dublin");
+          if (badge) badge.style.display = "inline-flex";
+          if (btn)   btn.disabled = true;
+        }
+      }
+
+    } else if (msg.type === "diag_result") {
+      const { tool, poi_id, result } = msg;
+      if (tool === "traceroute") {
+        if (!tracerouteData[poi_id]) tracerouteData[poi_id] = [];
+        tracerouteData[poi_id].push(result);
+        if (selectedId === poi_id) {
+          renderTracerouteRuns(poi_id);
+          const badge = document.getElementById("tr-running-badge");
+          const btn   = document.getElementById("btn-run-traceroute");
+          if (badge) badge.style.display = "none";
+          if (btn)   btn.disabled = false;
+          toast("Traceroute complete — " + result.hop_count + " hops in " + result.duration_s + "s", "success");
+        }
+      } else if (tool === "mtr") {
+        if (!mtrData[poi_id]) mtrData[poi_id] = [];
+        mtrData[poi_id].push(result);
+        if (selectedId === poi_id) {
+          renderMTRRuns(poi_id);
+          const badge = document.getElementById("mtr-running-badge");
+          const btn   = document.getElementById("btn-run-mtr");
+          if (badge) badge.style.display = "none";
+          if (btn)   btn.disabled = false;
+          toast("MTR complete — " + result.hop_count + " hops in " + result.duration_s + "s", "success");
+        }
+      } else if (tool === "dublin") {
+        if (!dublinData[poi_id]) dublinData[poi_id] = [];
+        dublinData[poi_id].push(result);
+        if (selectedId === poi_id) {
+          renderDublinRuns(poi_id);
+          const badge = document.getElementById("dublin-running-badge");
+          const btn   = document.getElementById("btn-run-dublin");
+          if (badge) badge.style.display = "none";
+          if (btn)   btn.disabled = false;
+          const divergeInfo = result.divergence_hops && result.divergence_hops.length > 0
+            ? " — splits at TTL " + result.divergence_hops.join(", ")
+            : " — single path";
+          toast("Dublin complete — " + result.flow_count + " flows" + divergeInfo, "success");
+        }
+      }
+    }
+  };
+}
+
+// ─── Sidebar ──────────────────────────────────────────────────
+function renderSidebar() {
+  const list = document.getElementById("poi-list");
+  const ids = Object.keys(pois);
+
+  if (ids.length === 0) {
+    list.innerHTML = `
+      <div class="empty-state" style="min-height:auto; padding: var(--space-8) var(--space-4);">
+        <svg class="empty-icon" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="24" cy="24" r="22"/><circle cx="24" cy="24" r="12"/><circle cx="24" cy="24" r="4" fill="currentColor" stroke="none"/></svg>
+        <span style="font-size:var(--text-xs); color:var(--color-text-muted)">No POIs added yet</span>
+      </div>`;
+    updateSummaryPills();
+    return;
+  }
+
+  list.innerHTML = ids.map(id => buildSidebarItem(id)).join("");
+  updateSummaryPills();
+}
+
+function buildSidebarItem(id) {
+  const poi = pois[id];
+  const live = liveData[id] || {};
+  const status = live.status || "unknown";
+  const lat = live.latency_ms != null ? `${live.latency_ms.toFixed(1)}ms` : "—";
+  const activeClass = id === selectedId ? "active" : "";
+
+  return `
+    <div class="poi-item ${activeClass}" role="listitem" data-id="${id}" onclick="selectPOI('${id}')" data-testid="poi-item-${id}">
+      <span class="poi-status-dot ${status}"></span>
+      <div class="poi-item-info">
+        <div class="poi-item-name">${escHtml(poi.name)}</div>
+        <div class="poi-item-host">${escHtml(poi.host)}</div>
+      </div>
+      <span class="poi-item-latency">${lat}</span>
+    </div>`;
+}
+
+function updateSidebarItem(id) {
+  const list = document.getElementById("poi-list");
+  const existing = list.querySelector(`[data-id="${id}"]`);
+  if (!existing) { renderSidebar(); return; }
+  existing.outerHTML = buildSidebarItem(id);
+  // Re-attach click if needed (outerHTML replaces the node)
+  list.querySelector(`[data-id="${id}"]`).onclick = () => selectPOI(id);
+  updateSummaryPills();
+}
+
+function updateSummaryPills() {
+  const ids = Object.keys(pois);
+  let up = 0, down = 0, unknown = 0;
+  ids.forEach(id => {
+    const s = (liveData[id] || {}).status || "unknown";
+    if (s === "up") up++;
+    else if (s === "down") down++;
+    else unknown++;
+  });
+  const pills = document.getElementById("summary-pills");
+  pills.innerHTML = `
+    <span class="pill pill-up"><span class="pill-dot"></span>${up} UP</span>
+    <span class="pill pill-down"><span class="pill-dot"></span>${down} DOWN</span>
+    ${unknown > 0 ? `<span class="pill pill-unknown"><span class="pill-dot"></span>${unknown} ?</span>` : ""}
+  `;
+}
+
+// ─── Detail view ──────────────────────────────────────────────
+function selectPOI(id) {
+  selectedId = id;
+  // Re-render sidebar to highlight active
+  renderSidebar();
+  renderDetail();
+}
+
+function renderDetail() {
+  if (!selectedId || !pois[selectedId]) return;
+  const poi = pois[selectedId];
+
+  document.getElementById("welcome-screen").style.display = "none";
+  document.getElementById("detail-view").style.display = "block";
+  document.getElementById("topbar-actions").style.display = "flex";
+  document.getElementById("topbar-title").textContent = poi.name;
+  document.getElementById("topbar-host").textContent = poi.host;
+  document.getElementById("kpi-interval-sub").textContent = `Interval: ${poi.interval}s · ${poi.count} pings`;
+
+  initCharts();
+  updateKPIs();
+  updateCharts();
+  updateHistoryTable();
+  renderTracerouteRuns(selectedId);
+  renderMTRRuns(selectedId);
+  renderDublinRuns(selectedId);
+}
+
+function updateKPIs() {
+  if (!selectedId) return;
+  const live = liveData[selectedId] || {};
+  const hist = historyData[selectedId] || [];
+  const status = live.status || "unknown";
+
+  // Status badge
+  const badge = document.getElementById("status-badge");
+  badge.textContent = status.toUpperCase();
+  badge.className = `status-badge ${status}`;
+
+  // Latency
+  const kpiLat = document.getElementById("kpi-latency");
+  if (live.latency_ms != null) {
+    kpiLat.textContent = `${live.latency_ms.toFixed(1)} ms`;
+    kpiLat.style.color = live.latency_ms < 50 ? "var(--color-success)" : live.latency_ms < 150 ? "var(--color-warning)" : "var(--color-error)";
+  } else {
+    kpiLat.textContent = "—";
+    kpiLat.style.color = "var(--color-text-muted)";
+  }
+
+  // Loss
+  const kpiLoss = document.getElementById("kpi-loss");
+  const loss = live.loss_pct ?? null;
+  if (loss != null) {
+    kpiLoss.textContent = `${loss.toFixed(0)}%`;
+    kpiLoss.style.color = loss === 0 ? "var(--color-success)" : loss < 20 ? "var(--color-warning)" : "var(--color-error)";
+  } else {
+    kpiLoss.textContent = "—";
+    kpiLoss.style.color = "var(--color-text-muted)";
+  }
+
+  // Uptime
+  const kpiUp = document.getElementById("kpi-uptime");
+  if (hist.length > 0) {
+    const upCount = hist.filter(h => h.status === "up").length;
+    const pct = (upCount / hist.length * 100).toFixed(1);
+    kpiUp.textContent = `${pct}%`;
+    kpiUp.style.color = parseFloat(pct) >= 99 ? "var(--color-success)" : parseFloat(pct) >= 90 ? "var(--color-warning)" : "var(--color-error)";
+    document.getElementById("kpi-uptime-sub").textContent = `${hist.length} probes total`;
+  } else {
+    kpiUp.textContent = "—";
+    kpiUp.style.color = "var(--color-text-muted)";
+    document.getElementById("kpi-uptime-sub").textContent = "No probes yet";
+  }
+
+  // Last checked
+  const kpiLast = document.getElementById("kpi-last-checked");
+  if (live.last_checked) {
+    const d = new Date(live.last_checked * 1000);
+    kpiLast.textContent = d.toLocaleTimeString();
+  } else {
+    kpiLast.textContent = "—";
+  }
+}
+
+// ─── Charts ───────────────────────────────────────────────────
+const CHART_OPTS_BASE = {
+  responsive: true,
+  maintainAspectRatio: false,
+  animation: { duration: 300 },
+  interaction: { mode: "index", intersect: false },
+  plugins: {
+    legend: { display: false },
+    tooltip: {
+      backgroundColor: "#1c2128",
+      borderColor: "#30363d",
+      borderWidth: 1,
+      titleColor: "#8b949e",
+      bodyColor: "#e6edf3",
+      titleFont: { family: "'JetBrains Mono', monospace", size: 10 },
+      bodyFont: { family: "'JetBrains Mono', monospace", size: 11 },
+    }
+  },
+  scales: {
+    x: {
+      display: true,
+      grid: { color: "rgba(48,54,61,0.5)", drawBorder: false },
+      ticks: {
+        color: "#484f58",
+        font: { family: "'JetBrains Mono', monospace", size: 9 },
+        maxTicksLimit: 6,
+        maxRotation: 0,
+      }
+    },
+    y: {
+      display: true,
+      grid: { color: "rgba(48,54,61,0.5)", drawBorder: false },
+      ticks: {
+        color: "#8b949e",
+        font: { family: "'JetBrains Mono', monospace", size: 10 },
+        maxTicksLimit: 5,
+      }
+    }
+  }
+};
+
+function initCharts() {
+  // Destroy existing charts
+  if (chartLatency) { chartLatency.destroy(); chartLatency = null; }
+  if (chartLoss) { chartLoss.destroy(); chartLoss = null; }
+
+  const ctxLat = document.getElementById("chart-latency").getContext("2d");
+  chartLatency = new Chart(ctxLat, {
+    type: "line",
+    data: { labels: [], datasets: [{
+      data: [],
+      borderColor: "#2f81f7",
+      backgroundColor: "rgba(47,129,247,0.07)",
+      fill: true,
+      borderWidth: 1.5,
+      pointRadius: 0,
+      pointHoverRadius: 3,
+      tension: 0.3,
+    }]},
+    options: {
+      ...CHART_OPTS_BASE,
+      scales: {
+        ...CHART_OPTS_BASE.scales,
+        y: { ...CHART_OPTS_BASE.scales.y, min: 0, ticks: { ...CHART_OPTS_BASE.scales.y.ticks, callback: v => v + " ms" } }
+      }
+    }
+  });
+
+  const ctxLoss = document.getElementById("chart-loss").getContext("2d");
+  chartLoss = new Chart(ctxLoss, {
+    type: "bar",
+    data: { labels: [], datasets: [{
+      data: [],
+      backgroundColor: ctx => {
+        const v = ctx.dataset.data[ctx.dataIndex];
+        return v === 0 ? "rgba(63,185,80,0.5)" : v < 20 ? "rgba(210,153,34,0.7)" : "rgba(248,81,73,0.7)";
+      },
+      borderRadius: 2,
+    }]},
+    options: {
+      ...CHART_OPTS_BASE,
+      scales: {
+        ...CHART_OPTS_BASE.scales,
+        y: { ...CHART_OPTS_BASE.scales.y, min: 0, max: 100, ticks: { ...CHART_OPTS_BASE.scales.y.ticks, callback: v => v + "%" } }
+      }
+    }
+  });
+}
+
+function updateCharts() {
+  if (!chartLatency || !chartLoss || !selectedId) return;
+  const hist = historyData[selectedId] || [];
+  const last = hist.slice(-60);
+
+  const labels = last.map(h => {
+    const d = new Date(h.ts * 1000);
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  });
+  const latValues = last.map(h => h.latency_ms != null ? parseFloat(h.latency_ms.toFixed(2)) : null);
+  const lossValues = last.map(h => h.loss_pct ?? 0);
+
+  chartLatency.data.labels = labels;
+  chartLatency.data.datasets[0].data = latValues;
+  chartLatency.update("none");
+
+  chartLoss.data.labels = labels;
+  chartLoss.data.datasets[0].data = lossValues;
+  chartLoss.update("none");
+}
+
+// ─── History Table ────────────────────────────────────────────
+function updateHistoryTable() {
+  if (!selectedId) return;
+  const hist = historyData[selectedId] || [];
+  const tbody = document.getElementById("history-tbody");
+  const countEl = document.getElementById("history-count");
+
+  countEl.textContent = `${hist.length} records`;
+
+  if (hist.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--color-text-muted); padding:var(--space-8);">No probes yet — waiting for first ping...</td></tr>`;
+    return;
+  }
+
+  const rows = [...hist].reverse().slice(0, 50).map(h => {
+    const d = new Date(h.ts * 1000);
+    const ts = d.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const lat = h.latency_ms != null ? `${h.latency_ms.toFixed(2)}` : "—";
+    const loss = `${(h.loss_pct ?? 0).toFixed(0)}%`;
+    const statusClass = `td-status-${h.status}`;
+    return `<tr>
+      <td class="td-mono">${ts}</td>
+      <td class="${statusClass}">${h.status.toUpperCase()}</td>
+      <td class="td-mono">${lat}</td>
+      <td class="td-mono">${loss}</td>
+    </tr>`;
+  }).join("");
+
+  tbody.innerHTML = rows;
+}
+
+// ─── API calls ────────────────────────────────────────────────
+async function apiFetch(path, opts = {}) {
+  const res = await fetch(API + path, {
+    headers: { "Content-Type": "application/json" },
+    ...opts,
+  });
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  return res.json();
+}
+
+// ─── Add POI ──────────────────────────────────────────────────
+function openAddModal() {
+  document.getElementById("form-add").reset();
+  document.getElementById("add-interval").value = 30;
+  document.getElementById("add-count").value = 4;
+  openModal("modal-add");
+}
+
+async function submitAddPOI(e) {
+  e.preventDefault();
+  const body = {
+    name: document.getElementById("add-name").value.trim(),
+    host: document.getElementById("add-host").value.trim(),
+    interval: parseInt(document.getElementById("add-interval").value),
+    count: parseInt(document.getElementById("add-count").value),
+    teams_webhook: document.getElementById("add-webhook").value.trim(),
+  };
+  try {
+    const poi = await apiFetch("/api/pois", { method: "POST", body: JSON.stringify(body) });
+    pois[poi.id] = poi;
+    liveData[poi.id] = { status: "unknown" };
+    historyData[poi.id] = [];
+    renderSidebar();
+    closeModal("modal-add");
+    toast("POI added: " + poi.name, "success");
+    selectPOI(poi.id);
+  } catch (err) {
+    toast("Failed to add POI: " + err.message, "error");
+  }
+}
+
+// ─── Edit POI ─────────────────────────────────────────────────
+function openEditModal() {
+  if (!selectedId || !pois[selectedId]) return;
+  const poi = pois[selectedId];
+  document.getElementById("edit-name").value = poi.name;
+  document.getElementById("edit-host").value = poi.host;
+  document.getElementById("edit-interval").value = poi.interval;
+  document.getElementById("edit-count").value = poi.count;
+  document.getElementById("edit-webhook").value = poi.teams_webhook || "";
+  openModal("modal-edit");
+}
+
+async function submitEditPOI(e) {
+  e.preventDefault();
+  if (!selectedId) return;
+  const body = {
+    name: document.getElementById("edit-name").value.trim(),
+    host: document.getElementById("edit-host").value.trim(),
+    interval: parseInt(document.getElementById("edit-interval").value),
+    count: parseInt(document.getElementById("edit-count").value),
+    teams_webhook: document.getElementById("edit-webhook").value.trim(),
+  };
+  try {
+    const updated = await apiFetch(`/api/pois/${selectedId}`, { method: "PUT", body: JSON.stringify(body) });
+    pois[selectedId] = updated;
+    renderSidebar();
+    renderDetail();
+    closeModal("modal-edit");
+    toast("POI updated", "success");
+  } catch (err) {
+    toast("Update failed: " + err.message, "error");
+  }
+}
+
+// ─── Delete POI ───────────────────────────────────────────────
+async function confirmDelete() {
+  if (!selectedId || !pois[selectedId]) return;
+  if (!confirm(`Delete POI "${pois[selectedId].name}"? This cannot be undone.`)) return;
+  try {
+    await apiFetch(`/api/pois/${selectedId}`, { method: "DELETE" });
+    delete pois[selectedId];
+    delete liveData[selectedId];
+    delete historyData[selectedId];
+    selectedId = null;
+    renderSidebar();
+    // Show welcome
+    document.getElementById("welcome-screen").style.display = "flex";
+    document.getElementById("detail-view").style.display = "none";
+    document.getElementById("topbar-actions").style.display = "none";
+    document.getElementById("topbar-title").textContent = "Select a POI";
+    document.getElementById("topbar-host").textContent = "";
+    toast("POI deleted", "success");
+  } catch (err) {
+    toast("Delete failed: " + err.message, "error");
+  }
+}
+
+// ─── Ping Now ─────────────────────────────────────────────────
+async function pingNow() {
+  if (!selectedId) return;
+  try {
+    await apiFetch(`/api/pois/${selectedId}/ping-now`, { method: "POST" });
+    toast("Ping queued", "success");
+  } catch (err) {
+    toast("Ping failed: " + err.message, "error");
+  }
+}
+
+// ─── Settings ─────────────────────────────────────────────────
+async function openSettingsModal() {
+  try {
+    const s = await apiFetch("/api/settings");
+    document.getElementById("settings-webhook").value = s.teams_webhook || "";
+  } catch (_) {}
+  openModal("modal-settings");
+}
+
+async function submitSettings(e) {
+  e.preventDefault();
+  const body = { teams_webhook: document.getElementById("settings-webhook").value.trim() };
+  try {
+    await apiFetch("/api/settings", { method: "PUT", body: JSON.stringify(body) });
+    closeModal("modal-settings");
+    toast("Settings saved", "success");
+  } catch (err) {
+    toast("Save failed: " + err.message, "error");
+  }
+}
+
+// ─── Modal helpers ────────────────────────────────────────────
+function openModal(id) {
+  document.getElementById(id).classList.add("open");
+  document.body.style.overflow = "hidden";
+}
+
+function closeModal(id) {
+  document.getElementById(id).classList.remove("open");
+  document.body.style.overflow = "";
+}
+
+// Click backdrop to close
+document.querySelectorAll(".overlay").forEach(el => {
+  el.addEventListener("click", e => {
+    if (e.target === el) closeModal(el.id);
+  });
+});
+
+// Escape key
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") {
+    document.querySelectorAll(".overlay.open").forEach(el => closeModal(el.id));
+  }
+});
+
+// ─── Toast ────────────────────────────────────────────────────
+function toast(msg, type = "") {
+  const container = document.getElementById("toasts");
+  const el = document.createElement("div");
+  el.className = `toast ${type}`;
+  const icons = {
+    success: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3fb950" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`,
+    error: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f85149" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>`,
+    "": `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2f81f7" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>`,
+  };
+  el.innerHTML = `${icons[type] || icons[""]} <span>${escHtml(msg)}</span>`;
+  container.appendChild(el);
+  setTimeout(() => { el.style.opacity = "0"; el.style.transform = "translateX(16px)"; el.style.transition = "0.3s"; setTimeout(() => el.remove(), 300); }, 3500);
+}
+
+// ─── Util ─────────────────────────────────────────────────────
+function escHtml(str) {
+  return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+// ─── Tab switching ───────────────────────────────────────────
+let activeTab = "ping";
+
+function switchTab(name) {
+  activeTab = name;
+  document.querySelectorAll(".tab-btn").forEach(b => {
+    b.classList.toggle("active", b.dataset.tab === name);
+  });
+  document.querySelectorAll(".tab-panel").forEach(p => {
+    p.classList.toggle("active", p.id === `tab-panel-${name}`);
+  });
+}
+
+// ─── Diag history per POI ─────────────────────────────────────
+let tracerouteData = {};  // {poi_id: [...runs]}
+let mtrData = {};         // {poi_id: [...runs]}
+let dublinData = {};      // {poi_id: [...runs]}
+
+// ─── Traceroute ───────────────────────────────────────────────
+async function runTraceroute() {
+  if (!selectedId) return;
+  const maxHops = parseInt(document.getElementById("tr-max-hops").value);
+  try {
+    await apiFetch(`/api/pois/${selectedId}/traceroute?max_hops=${maxHops}`, { method: "POST" });
+    // Badge shown via WS diag_start
+    document.getElementById("btn-run-traceroute").disabled = true;
+    toast("Traceroute started — results appear when complete", "");
+  } catch (err) {
+    if (err.message.includes("409")) {
+      toast("Traceroute already running", "error");
+    } else {
+      toast("Failed: " + err.message, "error");
+    }
+  }
+}
+
+function renderTracerouteRuns(poiId) {
+  const list = document.getElementById("traceroute-run-list");
+  if (!list) return;
+  const runs = (tracerouteData[poiId] || []).slice().reverse(); // newest first
+  const badge = document.getElementById("tr-count-badge");
+  if (badge) badge.textContent = runs.length ? `${runs.length} run${runs.length !== 1 ? 's' : ''} recorded` : "";
+
+  if (runs.length === 0) {
+    list.innerHTML = `<div style="text-align:center; padding:var(--space-8); color:var(--color-text-muted); font-size:var(--text-sm);">No traceroute runs yet — click <strong>Run Now</strong> to start.</div>`;
+    return;
+  }
+
+  list.innerHTML = runs.map((run, idx) => buildTracerouteCard(run, idx)).join("");
+}
+
+function buildTracerouteCard(run, idx) {
+  const bodyId = `tr-body-${run.id || idx}`;
+  const rawId  = `tr-raw-${run.id || idx}`;
+  const hopRows = run.hops && run.hops.length > 0
+    ? run.hops.map(h => {
+        const isTimeout = h.timeout || h.host === "*";
+        const rtts = (h.rtts_ms || []).map(r => `${r.toFixed(2)}`).join(" / ") || "* * *";
+        const avg = h.avg_ms != null ? `${h.avg_ms.toFixed(2)} ms` : "—";
+        const hopClass = isTimeout ? "hop-timeout" : "";
+        return `<tr class="${hopClass}">
+          <td>${h.hop}</td>
+          <td>${escHtml(h.host)}</td>
+          <td>${isTimeout ? "<span class='hop-timeout'>* * *</span>" : rtts + " ms"}</td>
+          <td>${isTimeout ? "—" : avg}</td>
+        </tr>`;
+      }).join("")
+    : `<tr><td colspan="4" style="color:var(--color-text-muted); padding:var(--space-4); text-align:center;">No hops parsed</td></tr>`;
+
+  const errorBadge = run.error ? `<span style="color:var(--color-error); font-size:var(--text-xs); font-family:var(--font-display);">[${escHtml(run.error)}]</span>` : "";
+  const durText = run.duration_s != null ? `${run.duration_s}s` : "";
+
+  return `
+    <div class="diag-run-card">
+      <div class="diag-run-header" onclick="toggleDiagBody('${bodyId}', this)">
+        <div class="diag-run-meta">
+          <span class="diag-ts">${escHtml(run.ts_iso || new Date(run.ts * 1000).toLocaleString())}</span>
+          ${errorBadge}
+          <span class="diag-info">${run.hop_count} hops &nbsp;&middot;&nbsp; ${durText}</span>
+        </div>
+        <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="diag-run-body" id="${bodyId}">
+        <div class="diag-hop-table-wrap">
+          <table class="diag-hop-table">
+            <thead><tr><th>Hop</th><th>Host / IP</th><th>RTTs</th><th>Avg RTT</th></tr></thead>
+            <tbody>${hopRows}</tbody>
+          </table>
+        </div>
+        <div class="raw-toggle" onclick="toggleRaw('${rawId}', this)">
+          <svg class="chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          Show raw output
+        </div>
+        <div class="raw-output" id="${rawId}" style="display:none">${escHtml(run.raw || "")}</div>
+      </div>
+    </div>`;
+}
+
+// ─── MTR ──────────────────────────────────────────────────────
+async function runMTR() {
+  if (!selectedId) return;
+  const cycles = parseInt(document.getElementById("mtr-cycles").value);
+  try {
+    await apiFetch(`/api/pois/${selectedId}/mtr?cycles=${cycles}`, { method: "POST" });
+    document.getElementById("btn-run-mtr").disabled = true;
+    toast(`MTR started (${cycles} cycles) — results appear when complete`, "");
+  } catch (err) {
+    if (err.message.includes("409")) {
+      toast("MTR already running", "error");
+    } else {
+      toast("Failed: " + err.message, "error");
+    }
+  }
+}
+
+function renderMTRRuns(poiId) {
+  const list = document.getElementById("mtr-run-list");
+  if (!list) return;
+  const runs = (mtrData[poiId] || []).slice().reverse();
+  const badge = document.getElementById("mtr-count-badge");
+  if (badge) badge.textContent = runs.length ? `${runs.length} run${runs.length !== 1 ? 's' : ''} recorded` : "";
+
+  if (runs.length === 0) {
+    list.innerHTML = `<div style="text-align:center; padding:var(--space-8); color:var(--color-text-muted); font-size:var(--text-sm);">No MTR runs yet — click <strong>Run Now</strong> to start.</div>`;
+    return;
+  }
+
+  list.innerHTML = runs.map((run, idx) => buildMTRCard(run, idx)).join("");
+}
+
+function buildMTRCard(run, idx) {
+  const bodyId = `mtr-body-${run.id || idx}`;
+  const rawId  = `mtr-raw-${run.id || idx}`;
+
+  const hopRows = run.hops && run.hops.length > 0
+    ? run.hops.map(h => {
+        const lossClass = h.loss_pct >= 50 ? "hop-loss-high" : h.loss_pct > 0 ? "hop-loss-med" : "hop-loss-ok";
+        return `<tr>
+          <td>${h.hop}</td>
+          <td>${escHtml(h.host)}</td>
+          <td class="${lossClass}">${h.loss_pct.toFixed(1)}%</td>
+          <td>${h.sent}</td>
+          <td>${h.last_ms.toFixed(2)}</td>
+          <td>${h.avg_ms.toFixed(2)}</td>
+          <td>${h.best_ms.toFixed(2)}</td>
+          <td>${h.worst_ms.toFixed(2)}</td>
+          <td>${h.stdev_ms.toFixed(2)}</td>
+        </tr>`;
+      }).join("")
+    : `<tr><td colspan="9" style="color:var(--color-text-muted); padding:var(--space-4); text-align:center;">No hops parsed</td></tr>`;
+
+  const errorBadge = run.error ? `<span style="color:var(--color-error); font-size:var(--text-xs); font-family:var(--font-display);">[${escHtml(run.error)}]</span>` : "";
+  const durText = run.duration_s != null ? `${run.duration_s}s` : "";
+  const cyclesText = run.cycles ? `${run.cycles} cycles` : "";
+
+  return `
+    <div class="diag-run-card">
+      <div class="diag-run-header" onclick="toggleDiagBody('${bodyId}', this)">
+        <div class="diag-run-meta">
+          <span class="diag-ts">${escHtml(run.ts_iso || new Date(run.ts * 1000).toLocaleString())}</span>
+          ${errorBadge}
+          <span class="diag-info">${run.hop_count} hops &nbsp;&middot;&nbsp; ${cyclesText} &nbsp;&middot;&nbsp; ${durText}</span>
+        </div>
+        <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="diag-run-body" id="${bodyId}">
+        <div class="diag-hop-table-wrap">
+          <table class="diag-hop-table">
+            <thead><tr><th>Hop</th><th>Host / IP</th><th>Loss%</th><th>Snt</th><th>Last</th><th>Avg</th><th>Best</th><th>Worst</th><th>StDev</th></tr></thead>
+            <tbody>${hopRows}</tbody>
+          </table>
+        </div>
+        <div class="raw-toggle" onclick="toggleRaw('${rawId}', this)">
+          <svg class="chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          Show raw output
+        </div>
+        <div class="raw-output" id="${rawId}" style="display:none">${escHtml(run.raw || "")}</div>
+      </div>
+    </div>`;
+}
+
+// ─── Diag card helpers ────────────────────────────────────────
+function toggleDiagBody(bodyId, headerEl) {
+  const body = document.getElementById(bodyId);
+  if (!body) return;
+  const open = body.classList.toggle("open");
+  const chevron = headerEl.querySelector(".chevron");
+  if (chevron) chevron.classList.toggle("open", open);
+}
+
+function toggleRaw(rawId, toggleEl) {
+  const raw = document.getElementById(rawId);
+  if (!raw) return;
+  const open = raw.style.display === "none";
+  raw.style.display = open ? "block" : "none";
+  const chevron = toggleEl.querySelector(".chevron");
+  if (chevron) chevron.classList.toggle("open", open);
+  toggleEl.querySelector("svg + ") // update label
+  const textNode = [...toggleEl.childNodes].find(n => n.nodeType === 3);
+  if (textNode) textNode.textContent = open ? " Hide raw output" : " Show raw output";
+}
+
+// ─── Boot ─────────────────────────────────────────────────────
+
+// ─── Dublin Traceroute ───────────────────────────────────────
+async function runDublin() {
+  if (!selectedId) return;
+  const npaths = parseInt(document.getElementById("dublin-npaths").value);
+  const maxTtl = parseInt(document.getElementById("dublin-maxttl").value);
+  try {
+    await apiFetch(`/api/pois/${selectedId}/dublin?npaths=${npaths}&max_ttl=${maxTtl}`, { method: "POST" });
+    document.getElementById("btn-run-dublin").disabled = true;
+    toast(`Dublin Traceroute started — probing ${npaths} paths, max TTL ${maxTtl}`, "");
+  } catch (err) {
+    if (err.message.includes("409")) {
+      toast("Dublin Traceroute already running", "error");
+    } else {
+      toast("Failed: " + err.message, "error");
+    }
+  }
+}
+
+function renderDublinRuns(poiId) {
+  const list = document.getElementById("dublin-run-list");
+  if (!list) return;
+  const runs = (dublinData[poiId] || []).slice().reverse();
+  const badge = document.getElementById("dublin-count-badge");
+  if (badge) badge.textContent = runs.length ? `${runs.length} run${runs.length !== 1 ? "s" : ""} recorded` : "";
+  if (runs.length === 0) {
+    list.innerHTML = `<div style="text-align:center; padding:var(--space-8); color:var(--color-text-muted); font-size:var(--text-sm);">No Dublin Traceroute runs yet — click <strong>Run Now</strong> to discover all ECMP paths.</div>`;
+    return;
+  }
+  list.innerHTML = runs.map((run, idx) => buildDublinCard(run, idx)).join("");
+}
+
+function buildDublinCard(run, idx) {
+  const bodyId = `dublin-body-${run.id || idx}`;
+  const rawId  = `dublin-raw-${run.id || idx}`;
+  const flows  = run.flows || [];
+  const divHops = new Set(run.divergence_hops || []);
+  const errorBadge = run.error ? `<span style="color:var(--color-error); font-size:var(--text-xs); font-family:var(--font-display);">[${escHtml(run.error)}]</span>` : "";
+  const durText = run.duration_s != null ? `${run.duration_s}s` : "";
+  const divergeBadge = divHops.size > 0
+    ? `<span class="diverge-badge">⇕ splits @ TTL ${[...divHops].join(", ")}</span>`
+    : ``;
+
+  const allTtls = [];
+  flows.forEach(f => f.hops.forEach(h => { if (!allTtls.includes(h.ttl)) allTtls.push(h.ttl); }));
+  allTtls.sort((a, b) => a - b);
+
+  const flowByTtl = flows.map(f => {
+    const m = {};
+    f.hops.forEach(h => m[h.ttl] = h);
+    return m;
+  });
+
+  const flowHeaders = flows.map(f =>
+    `<th class="flow-col" title="Flow ${f.flow_id}">Flow ${f.flow_id}</th>`
+  ).join("");
+
+  const rows = allTtls.map(ttl => {
+    const isDiverge = divHops.has(ttl);
+    const rowClass = isDiverge ? "diverge-row" : "";
+    const cells = flowByTtl.map(fmap => {
+      const hop = fmap[ttl];
+      if (!hop) return `<td class="hop-cell timeout-hop">*</td>`;
+      const name = hop.name || "*";
+      const isTimeout = !name || name === "*";
+      const rttMs = hop.rtt_ms;
+      const rttClass = rttMs == null ? "" : rttMs < 10 ? "rtt-fast" : rttMs < 50 ? "rtt-med" : "rtt-slow";
+      const rttStr = rttMs != null ? `<span class="hop-rtt ${rttClass}">${rttMs.toFixed(1)} ms</span>` : "";
+      let cellClass = "hop-cell";
+      if (isTimeout) cellClass += " timeout-hop";
+      else if (hop.is_last) cellClass += " last-hop";
+      else if (hop.nat_detected) cellClass += " nat-hop";
+      else if (isDiverge) cellClass += " diverge-hop";
+      return `<td class="${cellClass}">${escHtml(name)}${rttStr}</td>`;
+    }).join("");
+    return `<tr class="${rowClass}"><td class="ttl-cell">${ttl}</td>${cells}</tr>`;
+  }).join("");
+
+  const matrixHtml = flows.length > 0 ? `
+    <div class="dublin-legend">
+      <span><span class="legend-dot" style="background:#4ade80"></span>Fast &lt;10ms</span>
+      <span><span class="legend-dot" style="background:#facc15"></span>Med 10–50ms</span>
+      <span><span class="legend-dot" style="background:#f87171"></span>Slow &gt;50ms</span>
+      <span><span class="legend-dot" style="background:#ffaa00"></span>ECMP split</span>
+      <span><span class="legend-dot" style="background:#8855ff"></span>NAT detected</span>
+    </div>
+    <div class="dublin-matrix-wrap">
+      <table class="dublin-matrix">
+        <thead><tr><th>TTL</th>${flowHeaders}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>` : `<p style="color:var(--color-text-muted); font-size:var(--text-sm); padding:var(--space-4) 0;">No flow data parsed.</p>`;
+
+  return `
+    <div class="diag-run-card">
+      <div class="diag-run-header" onclick="toggleDiagBody(\'${bodyId}\', this)">
+        <div class="diag-run-meta">
+          <span class="diag-ts">${escHtml(run.ts_iso || new Date(run.ts * 1000).toLocaleString())}</span>
+          ${errorBadge}
+          <span class="diag-info">${run.flow_count || 0} flows &nbsp;&middot;&nbsp; ${durText}</span>
+          ${divergeBadge}
+        </div>
+        <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="diag-run-body" id="${bodyId}">
+        <div class="dublin-summary">
+          <div class="dublin-stat"><strong>${run.flow_count || 0}</strong>Flows probed</div>
+          <div class="dublin-stat"><strong>${divHops.size > 0 ? [...divHops].join(", ") : "—"}</strong>ECMP split TTLs</div>
+          <div class="dublin-stat"><strong>${run.npaths || "—"}</strong>Paths requested</div>
+          <div class="dublin-stat"><strong>${run.max_ttl || "—"}</strong>Max TTL</div>
+        </div>
+        ${matrixHtml}
+        <div class="raw-toggle" onclick="toggleRaw(\'${rawId}\', this)">
+          <svg class="chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          Show raw JSON
+        </div>
+        <div class="raw-output" id="${rawId}" style="display:none">${escHtml(JSON.stringify(run.raw_json || {}, null, 2))}</div>
+      </div>
+    </div>`;
+}
+
+connectWS();
+</script>
+
+<!-- Footer -->
+<footer style="display:none">
+  <a href="https://www.perplexity.ai/computer" target="_blank" rel="noopener noreferrer">Created with Perplexity Computer</a>
+</footer>
+</body>
+</html>
