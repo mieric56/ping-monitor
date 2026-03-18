@@ -34,6 +34,9 @@ MAX_DIAG_HISTORY    = 50    # last N traceroute / MTR / dublin runs per POI
 # DB path — mount /data as a Docker volume to persist across rebuilds
 DB_PATH = os.environ.get("DB_PATH", "/data/ping_monitor.db")
 
+# Single persistent DB connection — opened once in init_db(), protected by _db_lock
+_db_conn: Optional[sqlite3.Connection] = None
+
 
 # ─── In-memory storage ───────────────────────────────────────────────────────
 
@@ -65,113 +68,119 @@ global_settings = {
     "teams_webhook": os.environ.get("TEAMS_WEBHOOK", ""),
 }
 
-# Thread lock for synchronous DB writes
+# Lock protecting _db_conn — all DB operations are serialised through this
 _db_lock = Lock()
 
 
 # ─── SQLite helpers ───────────────────────────────────────────────────────────
 
-def get_db() -> sqlite3.Connection:
-    """Open a connection to the SQLite database."""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
-    return conn
+def _db() -> sqlite3.Connection:
+    """Return the single shared DB connection. Call only while holding _db_lock."""
+    return _db_conn
 
 
 def init_db():
-    """Create tables if they don't exist and ensure DB directory exists."""
+    """Open (or create) the DB file and create tables. Called once at startup."""
+    global _db_conn
+
+    # Ensure directory exists
     db_dir = os.path.dirname(DB_PATH)
     if db_dir:
         os.makedirs(db_dir, exist_ok=True)
 
-    with _db_lock, get_db() as conn:
-        conn.executescript("""
-            CREATE TABLE IF NOT EXISTS pois (
-                id           TEXT PRIMARY KEY,
-                name         TEXT NOT NULL,
-                host         TEXT NOT NULL,
-                interval_s   INTEGER NOT NULL DEFAULT 30,
-                count        INTEGER NOT NULL DEFAULT 4,
-                teams_webhook TEXT NOT NULL DEFAULT '',
-                created_at   REAL NOT NULL
-            );
+    # Open a single persistent connection — check_same_thread=False is safe
+    # because all access is serialised through _db_lock.
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    _db_conn = conn
 
-            CREATE TABLE IF NOT EXISTS ping_history (
-                id        INTEGER PRIMARY KEY AUTOINCREMENT,
-                poi_id    TEXT NOT NULL,
-                ts        REAL NOT NULL,
-                status    TEXT NOT NULL,
-                latency_ms REAL,
-                loss_pct  REAL NOT NULL DEFAULT 100
-            );
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS pois (
+            id            TEXT PRIMARY KEY,
+            name          TEXT NOT NULL,
+            host          TEXT NOT NULL,
+            interval_s    INTEGER NOT NULL DEFAULT 30,
+            count         INTEGER NOT NULL DEFAULT 4,
+            teams_webhook TEXT NOT NULL DEFAULT '',
+            created_at    REAL NOT NULL
+        );
 
-            CREATE TABLE IF NOT EXISTS traceroute_history (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                poi_id     TEXT NOT NULL,
-                run_id     TEXT NOT NULL,
-                ts         REAL NOT NULL,
-                ts_iso     TEXT NOT NULL,
-                host       TEXT NOT NULL,
-                hops_json  TEXT NOT NULL,
-                raw        TEXT NOT NULL,
-                hop_count  INTEGER NOT NULL DEFAULT 0,
-                duration_s REAL NOT NULL DEFAULT 0,
-                error      TEXT
-            );
+        CREATE TABLE IF NOT EXISTS ping_history (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            poi_id     TEXT NOT NULL,
+            ts         REAL NOT NULL,
+            status     TEXT NOT NULL,
+            latency_ms REAL,
+            loss_pct   REAL NOT NULL DEFAULT 100
+        );
 
-            CREATE TABLE IF NOT EXISTS mtr_history (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                poi_id     TEXT NOT NULL,
-                run_id     TEXT NOT NULL,
-                ts         REAL NOT NULL,
-                ts_iso     TEXT NOT NULL,
-                host       TEXT NOT NULL,
-                cycles     INTEGER NOT NULL DEFAULT 10,
-                hops_json  TEXT NOT NULL,
-                raw        TEXT NOT NULL,
-                hop_count  INTEGER NOT NULL DEFAULT 0,
-                duration_s REAL NOT NULL DEFAULT 0,
-                error      TEXT
-            );
+        CREATE TABLE IF NOT EXISTS traceroute_history (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            poi_id     TEXT NOT NULL,
+            run_id     TEXT NOT NULL,
+            ts         REAL NOT NULL,
+            ts_iso     TEXT NOT NULL,
+            host       TEXT NOT NULL,
+            hops_json  TEXT NOT NULL,
+            raw        TEXT NOT NULL,
+            hop_count  INTEGER NOT NULL DEFAULT 0,
+            duration_s REAL NOT NULL DEFAULT 0,
+            error      TEXT
+        );
 
-            CREATE TABLE IF NOT EXISTS dublin_history (
-                id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                poi_id          TEXT NOT NULL,
-                run_id          TEXT NOT NULL,
-                ts              REAL NOT NULL,
-                ts_iso          TEXT NOT NULL,
-                host            TEXT NOT NULL,
-                npaths          INTEGER NOT NULL DEFAULT 10,
-                max_ttl         INTEGER NOT NULL DEFAULT 30,
-                flows_json      TEXT NOT NULL,
-                flow_count      INTEGER NOT NULL DEFAULT 0,
-                divergence_json TEXT NOT NULL,
-                raw_json        TEXT NOT NULL,
-                duration_s      REAL NOT NULL DEFAULT 0,
-                error           TEXT
-            );
+        CREATE TABLE IF NOT EXISTS mtr_history (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            poi_id     TEXT NOT NULL,
+            run_id     TEXT NOT NULL,
+            ts         REAL NOT NULL,
+            ts_iso     TEXT NOT NULL,
+            host       TEXT NOT NULL,
+            cycles     INTEGER NOT NULL DEFAULT 10,
+            hops_json  TEXT NOT NULL,
+            raw        TEXT NOT NULL,
+            hop_count  INTEGER NOT NULL DEFAULT 0,
+            duration_s REAL NOT NULL DEFAULT 0,
+            error      TEXT
+        );
 
-            CREATE TABLE IF NOT EXISTS settings (
-                key   TEXT PRIMARY KEY,
-                value TEXT NOT NULL DEFAULT ''
-            );
+        CREATE TABLE IF NOT EXISTS dublin_history (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            poi_id          TEXT NOT NULL,
+            run_id          TEXT NOT NULL,
+            ts              REAL NOT NULL,
+            ts_iso          TEXT NOT NULL,
+            host            TEXT NOT NULL,
+            npaths          INTEGER NOT NULL DEFAULT 10,
+            max_ttl         INTEGER NOT NULL DEFAULT 30,
+            flows_json      TEXT NOT NULL,
+            flow_count      INTEGER NOT NULL DEFAULT 0,
+            divergence_json TEXT NOT NULL,
+            raw_json        TEXT NOT NULL,
+            duration_s      REAL NOT NULL DEFAULT 0,
+            error           TEXT
+        );
 
-            -- Indexes for fast history lookups
-            CREATE INDEX IF NOT EXISTS idx_ping_poi   ON ping_history       (poi_id, ts);
-            CREATE INDEX IF NOT EXISTS idx_tr_poi     ON traceroute_history  (poi_id, ts);
-            CREATE INDEX IF NOT EXISTS idx_mtr_poi    ON mtr_history         (poi_id, ts);
-            CREATE INDEX IF NOT EXISTS idx_dublin_poi ON dublin_history      (poi_id, ts);
-        """)
-        conn.commit()
+        CREATE TABLE IF NOT EXISTS settings (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL DEFAULT ''
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_ping_poi   ON ping_history       (poi_id, ts);
+        CREATE INDEX IF NOT EXISTS idx_tr_poi     ON traceroute_history  (poi_id, ts);
+        CREATE INDEX IF NOT EXISTS idx_mtr_poi    ON mtr_history         (poi_id, ts);
+        CREATE INDEX IF NOT EXISTS idx_dublin_poi ON dublin_history      (poi_id, ts);
+    """)
 
 
 # ─── DB persistence functions ─────────────────────────────────────────────────
+# All functions acquire _db_lock and use the single shared _db_conn.
 
 def db_save_poi(poi: dict):
-    with _db_lock, get_db() as conn:
-        conn.execute("""
+    with _db_lock:
+        _db().execute("""
             INSERT OR REPLACE INTO pois
               (id, name, host, interval_s, count, teams_webhook, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -180,43 +189,39 @@ def db_save_poi(poi: dict):
             poi["interval"], poi["count"],
             poi.get("teams_webhook", ""), poi["created_at"],
         ))
-        conn.commit()
+        _db().commit()
 
 
 def db_delete_poi(poi_id: str):
-    with _db_lock, get_db() as conn:
-        conn.execute("DELETE FROM pois WHERE id = ?", (poi_id,))
-        # Also purge history rows — keeps DB tidy
-        conn.execute("DELETE FROM ping_history WHERE poi_id = ?", (poi_id,))
-        conn.execute("DELETE FROM traceroute_history WHERE poi_id = ?", (poi_id,))
-        conn.execute("DELETE FROM mtr_history WHERE poi_id = ?", (poi_id,))
-        conn.execute("DELETE FROM dublin_history WHERE poi_id = ?", (poi_id,))
-        conn.commit()
+    with _db_lock:
+        _db().execute("DELETE FROM pois WHERE id = ?", (poi_id,))
+        _db().execute("DELETE FROM ping_history WHERE poi_id = ?", (poi_id,))
+        _db().execute("DELETE FROM traceroute_history WHERE poi_id = ?", (poi_id,))
+        _db().execute("DELETE FROM mtr_history WHERE poi_id = ?", (poi_id,))
+        _db().execute("DELETE FROM dublin_history WHERE poi_id = ?", (poi_id,))
+        _db().commit()
 
 
 def db_save_ping(poi_id: str, record: dict):
-    with _db_lock, get_db() as conn:
-        conn.execute("""
+    with _db_lock:
+        _db().execute("""
             INSERT INTO ping_history (poi_id, ts, status, latency_ms, loss_pct)
             VALUES (?, ?, ?, ?, ?)
         """, (poi_id, record["ts"], record["status"],
               record.get("latency_ms"), record.get("loss_pct", 100)))
-        # Trim old rows beyond MAX_PING_HISTORY
-        conn.execute("""
+        _db().execute("""
             DELETE FROM ping_history
             WHERE poi_id = ? AND id NOT IN (
                 SELECT id FROM ping_history
-                WHERE poi_id = ?
-                ORDER BY ts DESC
-                LIMIT ?
+                WHERE poi_id = ? ORDER BY ts DESC LIMIT ?
             )
         """, (poi_id, poi_id, MAX_PING_HISTORY))
-        conn.commit()
+        _db().commit()
 
 
 def db_save_traceroute(poi_id: str, result: dict):
-    with _db_lock, get_db() as conn:
-        conn.execute("""
+    with _db_lock:
+        _db().execute("""
             INSERT INTO traceroute_history
               (poi_id, run_id, ts, ts_iso, host, hops_json, raw, hop_count, duration_s, error)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -226,21 +231,19 @@ def db_save_traceroute(poi_id: str, result: dict):
             result.get("raw", ""), result.get("hop_count", 0),
             result.get("duration_s", 0), result.get("error"),
         ))
-        conn.execute("""
+        _db().execute("""
             DELETE FROM traceroute_history
             WHERE poi_id = ? AND id NOT IN (
                 SELECT id FROM traceroute_history
-                WHERE poi_id = ?
-                ORDER BY ts DESC
-                LIMIT ?
+                WHERE poi_id = ? ORDER BY ts DESC LIMIT ?
             )
         """, (poi_id, poi_id, MAX_DIAG_HISTORY))
-        conn.commit()
+        _db().commit()
 
 
 def db_save_mtr(poi_id: str, result: dict):
-    with _db_lock, get_db() as conn:
-        conn.execute("""
+    with _db_lock:
+        _db().execute("""
             INSERT INTO mtr_history
               (poi_id, run_id, ts, ts_iso, host, cycles, hops_json, raw, hop_count, duration_s, error)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -251,21 +254,19 @@ def db_save_mtr(poi_id: str, result: dict):
             result.get("hop_count", 0), result.get("duration_s", 0),
             result.get("error"),
         ))
-        conn.execute("""
+        _db().execute("""
             DELETE FROM mtr_history
             WHERE poi_id = ? AND id NOT IN (
                 SELECT id FROM mtr_history
-                WHERE poi_id = ?
-                ORDER BY ts DESC
-                LIMIT ?
+                WHERE poi_id = ? ORDER BY ts DESC LIMIT ?
             )
         """, (poi_id, poi_id, MAX_DIAG_HISTORY))
-        conn.commit()
+        _db().commit()
 
 
 def db_save_dublin(poi_id: str, result: dict):
-    with _db_lock, get_db() as conn:
-        conn.execute("""
+    with _db_lock:
+        _db().execute("""
             INSERT INTO dublin_history
               (poi_id, run_id, ts, ts_iso, host, npaths, max_ttl,
                flows_json, flow_count, divergence_json, raw_json, duration_s, error)
@@ -279,29 +280,27 @@ def db_save_dublin(poi_id: str, result: dict):
             json.dumps(result.get("raw_json", {})),
             result.get("duration_s", 0), result.get("error"),
         ))
-        conn.execute("""
+        _db().execute("""
             DELETE FROM dublin_history
             WHERE poi_id = ? AND id NOT IN (
                 SELECT id FROM dublin_history
-                WHERE poi_id = ?
-                ORDER BY ts DESC
-                LIMIT ?
+                WHERE poi_id = ? ORDER BY ts DESC LIMIT ?
             )
         """, (poi_id, poi_id, MAX_DIAG_HISTORY))
-        conn.commit()
+        _db().commit()
 
 
 def db_save_settings(key: str, value: str):
-    with _db_lock, get_db() as conn:
-        conn.execute("""
+    with _db_lock:
+        _db().execute("""
             INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)
         """, (key, value))
-        conn.commit()
+        _db().commit()
 
 
 def db_load_settings() -> dict:
-    with get_db() as conn:
-        rows = conn.execute("SELECT key, value FROM settings").fetchall()
+    with _db_lock:
+        rows = _db().execute("SELECT key, value FROM settings").fetchall()
         return {r["key"]: r["value"] for r in rows}
 
 
@@ -309,7 +308,11 @@ def db_load_settings() -> dict:
 
 def load_from_db():
     """Load all persisted data into in-memory structures on startup."""
-    with get_db() as conn:
+    with _db_lock:
+        conn = _db()
+        if conn is None:
+            return
+
         # --- POIs ---
         for row in conn.execute("SELECT * FROM pois ORDER BY created_at").fetchall():
             poi_id = row["id"]
@@ -323,8 +326,8 @@ def load_from_db():
                 "created_at":    row["created_at"],
             }
             pois[poi_id] = poi
-            live_data[poi_id] = {"status": "unknown", "latency_ms": None, "loss_pct": 0, "last_checked": None}
-            history[poi_id] = deque(maxlen=MAX_PING_HISTORY)
+            live_data[poi_id]          = {"status": "unknown", "latency_ms": None, "loss_pct": 0, "last_checked": None}
+            history[poi_id]            = deque(maxlen=MAX_PING_HISTORY)
             traceroute_history[poi_id] = deque(maxlen=MAX_DIAG_HISTORY)
             mtr_history[poi_id]        = deque(maxlen=MAX_DIAG_HISTORY)
             dublin_history[poi_id]     = deque(maxlen=MAX_DIAG_HISTORY)
@@ -333,8 +336,7 @@ def load_from_db():
         # --- Ping history ---
         for row in conn.execute("""
             SELECT poi_id, ts, status, latency_ms, loss_pct
-            FROM ping_history
-            ORDER BY ts ASC
+            FROM ping_history ORDER BY ts ASC
         """).fetchall():
             pid = row["poi_id"]
             if pid in history:
@@ -346,67 +348,67 @@ def load_from_db():
                 })
 
         # --- Traceroute history ---
-        for row in conn.execute("""
-            SELECT * FROM traceroute_history ORDER BY ts ASC
-        """).fetchall():
+        for row in conn.execute(
+            "SELECT * FROM traceroute_history ORDER BY ts ASC"
+        ).fetchall():
             pid = row["poi_id"]
             if pid in traceroute_history:
                 traceroute_history[pid].append({
-                    "id":        row["run_id"],
-                    "ts":        row["ts"],
-                    "ts_iso":    row["ts_iso"],
-                    "host":      row["host"],
-                    "hops":      json.loads(row["hops_json"]),
-                    "hop_count": row["hop_count"],
-                    "raw":       row["raw"],
+                    "id":         row["run_id"],
+                    "ts":         row["ts"],
+                    "ts_iso":     row["ts_iso"],
+                    "host":       row["host"],
+                    "hops":       json.loads(row["hops_json"]),
+                    "hop_count":  row["hop_count"],
+                    "raw":        row["raw"],
                     "duration_s": row["duration_s"],
-                    "error":     row["error"],
+                    "error":      row["error"],
                 })
 
         # --- MTR history ---
-        for row in conn.execute("""
-            SELECT * FROM mtr_history ORDER BY ts ASC
-        """).fetchall():
+        for row in conn.execute(
+            "SELECT * FROM mtr_history ORDER BY ts ASC"
+        ).fetchall():
             pid = row["poi_id"]
             if pid in mtr_history:
                 mtr_history[pid].append({
-                    "id":        row["run_id"],
-                    "ts":        row["ts"],
-                    "ts_iso":    row["ts_iso"],
-                    "host":      row["host"],
-                    "cycles":    row["cycles"],
-                    "hops":      json.loads(row["hops_json"]),
-                    "hop_count": row["hop_count"],
-                    "raw":       row["raw"],
+                    "id":         row["run_id"],
+                    "ts":         row["ts"],
+                    "ts_iso":     row["ts_iso"],
+                    "host":       row["host"],
+                    "cycles":     row["cycles"],
+                    "hops":       json.loads(row["hops_json"]),
+                    "hop_count":  row["hop_count"],
+                    "raw":        row["raw"],
                     "duration_s": row["duration_s"],
-                    "error":     row["error"],
+                    "error":      row["error"],
                 })
 
         # --- Dublin history ---
-        for row in conn.execute("""
-            SELECT * FROM dublin_history ORDER BY ts ASC
-        """).fetchall():
+        for row in conn.execute(
+            "SELECT * FROM dublin_history ORDER BY ts ASC"
+        ).fetchall():
             pid = row["poi_id"]
             if pid in dublin_history:
                 dublin_history[pid].append({
-                    "id":               row["run_id"],
-                    "ts":               row["ts"],
-                    "ts_iso":           row["ts_iso"],
-                    "host":             row["host"],
-                    "npaths":           row["npaths"],
-                    "max_ttl":          row["max_ttl"],
-                    "flows":            json.loads(row["flows_json"]),
-                    "flow_count":       row["flow_count"],
-                    "divergence_hops":  json.loads(row["divergence_json"]),
-                    "raw_json":         json.loads(row["raw_json"]),
-                    "duration_s":       row["duration_s"],
-                    "error":            row["error"],
+                    "id":              row["run_id"],
+                    "ts":              row["ts"],
+                    "ts_iso":          row["ts_iso"],
+                    "host":            row["host"],
+                    "npaths":          row["npaths"],
+                    "max_ttl":         row["max_ttl"],
+                    "flows":           json.loads(row["flows_json"]),
+                    "flow_count":      row["flow_count"],
+                    "divergence_hops": json.loads(row["divergence_json"]),
+                    "raw_json":        json.loads(row["raw_json"]),
+                    "duration_s":      row["duration_s"],
+                    "error":           row["error"],
                 })
 
         # --- Settings ---
-        saved = db_load_settings()
-        if "teams_webhook" in saved:
-            global_settings["teams_webhook"] = saved["teams_webhook"]
+        for row in conn.execute("SELECT key, value FROM settings").fetchall():
+            if row["key"] == "teams_webhook":
+                global_settings["teams_webhook"] = row["value"]
 
 
 # ─── Models ──────────────────────────────────────────────────────────────────
@@ -865,8 +867,21 @@ async def probe_poi(poi_id: str, poi: dict):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global ping_task
-    # Initialize DB schema, then load persisted data
+    global ping_task, DB_PATH
+    # If the configured DB path is not writable, fall back to a local file
+    # so the server always starts even without a volume mount.
+    db_dir = os.path.dirname(DB_PATH) or "."
+    try:
+        os.makedirs(db_dir, exist_ok=True)
+        test_file = os.path.join(db_dir, ".write_test")
+        with open(test_file, "w") as f:
+            f.write("ok")
+        os.remove(test_file)
+    except OSError:
+        fallback = os.path.join(os.path.dirname(__file__), "ping_monitor.db")
+        print(f"[DB] Cannot write to {DB_PATH!r} — falling back to {fallback!r}")
+        DB_PATH = fallback
+
     init_db()
     load_from_db()
     ping_task = asyncio.create_task(run_ping_loop())
@@ -1151,12 +1166,12 @@ def update_settings(body: SettingsUpdate):
 def db_info():
     """Return database path and row counts per table."""
     try:
-        with get_db() as conn:
-            tables = ["pois", "ping_history", "traceroute_history",
-                      "mtr_history", "dublin_history", "settings"]
+        tables = ["pois", "ping_history", "traceroute_history",
+                  "mtr_history", "dublin_history", "settings"]
+        with _db_lock:
             counts = {}
             for t in tables:
-                row = conn.execute(f"SELECT COUNT(*) as n FROM {t}").fetchone()
+                row = _db().execute(f"SELECT COUNT(*) as n FROM {t}").fetchone()
                 counts[t] = row["n"]
         return {
             "db_path": DB_PATH,
